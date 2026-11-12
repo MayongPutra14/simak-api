@@ -606,7 +606,7 @@ class AdminController
       // ----------------------------------------------------
       // SECTION B: UPDATE KEBERANGKATAN TABLE DEPARTURE DATA
       // ----------------------------------------------------
-      $dokFields = [
+      $docFields = [
         'pilgrimStatus',
         'plotNumber',
         'batch',
@@ -615,7 +615,9 @@ class AdminController
         'currPortionPosition',
         'currPortionStatus',
         'passport',
+        'statusPassport',
         'visa',
+        'statusVisa',
         'mutationStatus',
         'biometricStatus',
         'puskesmasStatus',
@@ -627,7 +629,7 @@ class AdminController
       ];
 
       $touchesDok = false;
-      foreach ($dokFields as $field) {
+      foreach ($docFields as $field) {
         if (array_key_exists($field, $requestData)) {
           $touchesDok = true;
           break;
@@ -635,7 +637,7 @@ class AdminController
       }
 
       if ($touchesDok) {
-        $dokColumnMap = [
+        $docColumnMap = [
           'pilgrimStatus' => 'status_jamaah',
           'plotNumber' => 'plot',
           'batch' => 'kloter',
@@ -644,7 +646,9 @@ class AdminController
           'currPortionPosition' => 'posisi_porsi',
           'currPortionStatus' => 'status_porsi',
           'passport' => 'passport',
+          'statusPassport' => 'status_passport',
           'visa' => 'visa',
+          'statusVisa' => 'status_visa',
           'mutationStatus' => 'mutasi',
           'biometricStatus' => 'bio_metrik',
           'puskesmasStatus' => 'puskesmas',
@@ -663,7 +667,7 @@ class AdminController
           // partial update for sent fields
           $sets = [];
           $params = [];
-          foreach ($dokColumnMap as $field => $column) {
+          foreach ($docColumnMap as $field => $column) {
             if (!array_key_exists($field, $requestData)) {
               continue;
             }
@@ -686,7 +690,9 @@ class AdminController
           $posisiPorsi = $requestData['currPortionPosition'] ?? '';
           $statusPorsi = $requestData['currPortionStatus'] ?? '';
           $passport = $requestData['passport'] ?? '';
+          $statusPassport = $requestData['statusPassport'] ?? 'menunggu';
           $visa = $requestData['visa'] ?? '';
+          $statusVisa = $requestData['statusVisa'] ?? 'menunggu';
           $mutasi = $requestData['mutationStatus'] ?? 'menunggu';
           $bioMetrik = $requestData['biometricStatus'] ?? 'menunggu';
           $puskesmas = $requestData['puskesmasStatus'] ?? 'menunggu';
@@ -696,13 +702,13 @@ class AdminController
           $foto = $requestData['photoStatus'] ?? 'menunggu';
           $spph = $requestData['spphStatus'] ?? 'menunggu';
 
-          $insertDokSql = "
-                        INSERT INTO keberangkatan (
-                            user_id, status_jamaah, plot, kloter, rombongan, regu,
-                            posisi_porsi, status_porsi, passport, visa, mutasi, bio_metrik, puskesmas,
-                            mcu, pelunasan, gform, foto, spph
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ";
+          $insertDokSql = `
+      INSERT INTO keberangkatan (
+          user_id, status_jamaah, plot, kloter, rombongan, regu,
+          posisi_porsi, status_porsi, passport, status_passport, visa, status_visa, mutasi, bio_metrik, puskesmas,
+          mcu, pelunasan, gform, foto, spph
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
 
           $stmtInsertDok = $this->conn->prepare($insertDokSql);
           $stmtInsertDok->execute([
@@ -715,7 +721,9 @@ class AdminController
             $posisiPorsi,
             $statusPorsi,
             $passport,
+            $statusPassport,
             $visa,
+            $statusVisa,
             $mutasi,
             $bioMetrik,
             $puskesmas,

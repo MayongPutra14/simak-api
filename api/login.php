@@ -21,7 +21,7 @@ $nomor_porsi = $input['nomor_porsi'] ?? $_POST['nomor_porsi'] ?? '';
 $password = $input['password'] ?? $_POST['password'] ?? '';
 
 // Tambahkan is_completed di dalam SELECT
-$stmt = $conn->prepare("SELECT id, nama_lengkap, nomor_porsi, role, password, gambar, is_completed FROM users WHERE nomor_porsi = ?");
+$stmt = $conn->prepare("SELECT id, nama_lengkap, nomor_porsi, role, password, zona, gambar, is_completed FROM users WHERE nomor_porsi = ?");
 $stmt->execute([$nomor_porsi]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -36,6 +36,7 @@ if ($user && password_verify($password, $user['password'])) {
       "fullName" => $user['nama_lengkap'],
       "portionNumber" => $user['nomor_porsi'],
       "role" => $user['role'],
+      "zone" => $user['zona'],
       "photoUrl" => $user['gambar'],
       "isCompleted" => (bool) $user['is_completed'],
     ],
