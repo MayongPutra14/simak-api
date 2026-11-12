@@ -522,6 +522,11 @@ class AdminController
       }
 
       if ($touchesProfile) {
+        // map frontend zone key to database zona column if present
+        if (array_key_exists('zone', $requestData)) {
+          $requestData['zona'] = $requestData['zone'];
+        }
+
         // calculate zone dynamically if subDistrict exists but zona is absent
         if (array_key_exists('subDistrict', $requestData) && !array_key_exists('zona', $requestData)) {
           $requestData['zona'] = $this->determineZone($requestData['subDistrict']);
@@ -553,7 +558,7 @@ class AdminController
           'job' => 'job',
           'departure' => 'program',
           'subDistrict' => 'subDistrict',
-          'zona' => 'zona',
+          'zone' => 'zona',
           'village' => 'village',
           'referenceName' => 'referensi_nama',
           'referencePhone' => 'referensi_wa',
