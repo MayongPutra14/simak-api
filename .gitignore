@@ -3,3 +3,4 @@ uploads/*
 logs/*
 api/koneksi.php
 .env
+scripts
