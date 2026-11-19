@@ -972,7 +972,7 @@ class AdminController
 
     // validate event status enum ('mendatang', 'live', 'selesai')
     $statusInput = trim($data['status'] ?? '');
-    $status = in_array($statusInput, ['mendatang', 'live', 'selesai', 'upcoming'], true) ? $statusInput : 'mendatang';
+    $status = in_array($statusInput, ['mendatang', 'live', 'selesai'], true) ? $statusInput : 'mendatang';
 
     // format start time & end time
     $rawWaktuStart = trim($data['timeStart'] ?? '');

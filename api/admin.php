@@ -102,11 +102,11 @@ switch ($action) {
 
   // CRUD EVENT
   case 'create_event':
-    $adminController->createEvent($data, $_FILES);
+    $adminController->createEvent($requestData, $_FILES);
     break;
 
   case 'update_event':
-    $adminController->updateEvent($data, $_FILES);
+    $adminController->updateEvent($requestData, $_FILES);
     break;
 
   case 'get_events':
@@ -114,11 +114,11 @@ switch ($action) {
     break;
 
   case 'get_event_detail':
-    $adminController->getEventDetail($data);
+    $adminController->getEventDetail($requestData);
     break;
 
   case 'delete_event':
-    $adminController->deleteEvent($data);
+    $adminController->deleteEvent($requestData);
     break;
 
   // READ & UPDATE landing page
@@ -127,11 +127,11 @@ switch ($action) {
     break;
 
   case 'get_landing_section':
-    $adminController->getSectionContent($data);
+    $adminController->getSectionContent($requestData);
     break;
 
   case 'update_landing_section':
-    $adminController->updateSectionContent($data);
+    $adminController->updateSectionContent($requestData);
     break;
 
   default:
