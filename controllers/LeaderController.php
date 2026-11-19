@@ -60,6 +60,44 @@ class LeaderController
   }
 
 
+  // update password
+  public function updatePassword($requestData)
+  {
+    // extract input parameters from request payload
+    $user_id = $requestData['user_id'] ?? '';
+    $password_baru = $requestData['newPassword'] ?? '';
+
+    // validate required fields
+    if (empty($user_id) || empty($password_baru)) {
+      return $this->response(400, "failed", "Leader ID dan password baru wajib diisi.");
+    }
+
+    try {
+      // check if leader record exists in database
+      $stmt = $this->conn->prepare("SELECT id FROM users WHERE id = ? AND role = 'leader'");
+      $stmt->execute([$user_id]);
+      $leader = $stmt->fetch(PDO::FETCH_ASSOC);
+
+      if (!$leader) {
+        return $this->response(404, "failed", "Leader tidak ditemukan.");
+      }
+
+      // hash new password using default algorithm
+      $new_password_hashed = password_hash($password_baru, PASSWORD_DEFAULT);
+
+      // execute password update query
+      $update_stmt = $this->conn->prepare("UPDATE users SET password = ? WHERE id = ? AND role = 'leader'");
+      $update_stmt->execute([$new_password_hashed, $user_id]);
+
+      // return success json response
+      return $this->response(200, "success", "Password berhasil diperbarui.");
+    } catch (Exception $e) {
+      // handle unexpected server error
+      return $this->response(500, "error", "Terjadi kesalahan pada server: " . $e->getMessage());
+    }
+  }
+
+
   // create user basic account
   /**
    * Create new basic user account assigned strictly to Leader's zone

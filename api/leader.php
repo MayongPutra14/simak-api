@@ -66,6 +66,10 @@ $action = $_GET['action'] ?? $requestData['action'] ?? '';
 
 // ROUTING ENDPOINT ADMIN
 switch ($action) {
+  case 'update_password':
+    $leaderController->updatePassword($requestData);
+    break;
+
   // CRUD USER
   case 'create_user':
     $leaderController->createUser($requestData);

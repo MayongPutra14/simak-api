@@ -66,6 +66,10 @@ $action = $_GET['action'] ?? $requestData['action'] ?? '';
 
 // ROUTING ENDPOINT ADMIN
 switch ($action) {
+  case 'update_password':
+    $adminController->updatePassword($requestData);
+    break;
+
   case 'update_kuota':
     $adminController->updateKuota($requestData);
     break;
