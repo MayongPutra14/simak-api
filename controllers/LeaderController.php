@@ -12,7 +12,7 @@ class LeaderController
   /**
    * Private helper to return standardized JSON response
    */
-  private function response($statusCode, $statusText, $message, $data = null)
+  private function response($statusCode, $statusText, $message, $requestData = null)
   {
     http_response_code($statusCode);
     $payload = [
@@ -20,8 +20,8 @@ class LeaderController
       "message" => $message
     ];
 
-    if ($data !== null) {
-      $payload['data'] = $data;
+    if ($requestData !== null) {
+      $payload['data'] = $requestData;
     }
 
     echo json_encode($payload);
@@ -59,15 +59,8 @@ class LeaderController
     }
   }
 
-  // CRUD USER
-  // create user: create account
-  /**
-   * Create a new pilgrim (Jamaah) user account
-   * 
-   * @param array $requestData
-   * @return void
-   */
-  // CREATE USER FOR LEADER
+
+  // create user basic account
   /**
    * Create new basic user account assigned strictly to Leader's zone
    * 
@@ -357,38 +350,13 @@ class LeaderController
     }
   }
 
-  // helper for update user profile: create an account
-  /**
-   * Determine geographical zone based on sub-district name
-   * 
-   * @param string $subDistrict
-   * @return string|null
-   */
-  private function determineZone($subDistrict)
-  {
-    // normalize string for case-insensitive comparison
-    $subDistrict = strtoupper(trim($subDistrict));
-
-    $zones = [
-      'A' => ['CIKAMPEK', 'JATISARI', 'KOTABARU', 'PURWASARI', 'TIRTAMULYA'],
-      'B' => ['BANYUSARI', 'CILAMAYA KULON', 'CILAMAYA WETAN', 'LEMAHABANG', 'MAJALAYA', 'RAWAMERTA', 'TELAGASARI', 'TEMPURAN'],
-      'C' => ['CIAMPEL', 'KARAWANG TIMUR', 'KLARI'],
-      'D' => ['KARAWANG BARAT', 'TELUKJAMBE BARAT', 'TELUKJAMBE TIMUR'],
-      'E' => ['PANGKALAN', 'TEGALWARU'],
-      'F' => ['BATUJAYA', 'CIBUAYA', 'CILEBAR', 'JAYAKERTA', 'KUTAWALUYA', 'PAKISJAYA', 'PEDES', 'RENGASDENGKLOK', 'TIRTAJAYA']
-    ];
-
-    foreach ($zones as $zone => $districts) {
-      if (in_array($subDistrict, $districts, true)) {
-        return $zone;
-      }
-    }
-
-    return null;
-  }
-
-
   // udpate user profile: create an account
+  /**
+   * Update user profile data strictly restricted to Leader's zone
+   * 
+   * @param array $requestData
+   * @return void
+   */
   /**
    * Update user profile data strictly restricted to Leader's zone
    * 
@@ -397,71 +365,70 @@ class LeaderController
    */
   public function updateUserProfile($requestData)
   {
-    // 1. SANITIZE & VALIDATE INPUTS
+    // 1. SANITIZE & VALIDATE REQUIRED IDENTIFIERS
     $userId = $requestData['user_id'] ?? '';
     $leaderId = $requestData['leader_id'] ?? '';
-    $zone = $requestData['zone'] ?? '';
 
     if (empty($userId)) {
       return $this->response(400, "failed", "User ID is invalid or missing.");
     }
 
-    // extract scalar fields
-    $address = $requestData['address'] ?? '';
-    $birthDate = $requestData['birthDate'] ?? '';
-    $birthPlace = $requestData['birthPlace'] ?? '';
-    $companion = $requestData['companion'] ?? '';
-    $mahramName = $requestData['mahramName'] ?? '';
-    $education = $requestData['education'] ?? '';
-    $experience = $requestData['experience'] ?? '';
-    $fatherName = $requestData['fatherName'] ?? '';
-    $gender = $requestData['gender'] ?? '';
-    $isCompleted = !empty($requestData['isCompleted']) ? 1 : 0;
-    $job = $requestData['job'] ?? '';
-    $program = $requestData['departure'] ?? '';
-    $subDistrict = $requestData['subDistrict'] ?? '';
-    $village = $requestData['village'] ?? '';
-
-    $referenceName = $requestData['referenceName'] ?? $requestData['referensi_nama'] ?? '';
-    $referencePhone = $requestData['referencePhone'] ?? $requestData['referensi_wa'] ?? '';
-    $referenceOrigin = $requestData['referenceOrigin'] ?? $requestData['referensi_asal'] ?? '';
-
-    // format array payloads into comma-separated strings
-    $healthCondition = is_array($requestData['health'] ?? null) ? implode(", ", $requestData['health']) : '';
-    $positiveTrait = is_array($requestData['contribution'] ?? null) ? implode(", ", $requestData['contribution']) : '';
-    $skill = is_array($requestData['expertise'] ?? null) ? implode(", ", $requestData['expertise']) : '';
-
-    // extract profile image URL if present
-    $photoUrl = $requestData['profileImage'] ?? $requestData['gambar'] ?? null;
+    if (empty($leaderId)) {
+      return $this->response(400, "failed", "Leader ID is required for authorization.");
+    }
 
     try {
-      // 2. FETCH LEADER ZONE IF NOT PROVIDED FROM FRONTEND
-      if (empty($zone)) {
-        if (empty($leaderId)) {
-          return $this->response(400, "failed", "Leader ID or Zone is required for authorization.");
-        }
+      // 2. FETCH AUTHORIZED LEADER ZONE DIRECTLY FROM DATABASE
+      $queryZone = "SELECT zona FROM users WHERE id = :leader_id AND role = 'leader' LIMIT 1";
+      $stmtZone = $this->conn->prepare($queryZone);
+      $stmtZone->execute([':leader_id' => $leaderId]);
+      $leader = $stmtZone->fetch(PDO::FETCH_ASSOC);
 
-        $queryZone = "SELECT zona FROM users WHERE id = :leader_id AND role = 'leader' LIMIT 1";
-        $stmtZone = $this->conn->prepare($queryZone);
-        $stmtZone->execute([':leader_id' => $leaderId]);
-        $leader = $stmtZone->fetch(PDO::FETCH_ASSOC);
-
-        if (!$leader || empty($leader['zona'])) {
-          return $this->response(404, "failed", "Leader data or assigned zone not found.");
-        }
-
-        $zone = $leader['zona'];
+      if (!$leader || empty($leader['zona'])) {
+        return $this->response(404, "failed", "Leader data or assigned zone not found.");
       }
 
-      // 3. VERIFY TARGET USER BELONGS TO LEADER'S ZONE
-      $verifyUserStmt = $this->conn->prepare("SELECT id FROM users WHERE id = :user_id AND zona = :zone LIMIT 1");
-      $verifyUserStmt->execute([':user_id' => $userId, ':zone' => $zone]);
+      $leaderZone = $leader['zona'];
 
-      if (!$verifyUserStmt->fetch()) {
+      // 3. VERIFY TARGET USER BELONGS TO LEADER'S ZONE & FETCH EXISTING DATA
+      $verifyUserStmt = $this->conn->prepare("SELECT * FROM users WHERE id = :user_id AND zona = :zone LIMIT 1");
+      $verifyUserStmt->execute([':user_id' => $userId, ':zone' => $leaderZone]);
+      $existingUser = $verifyUserStmt->fetch(PDO::FETCH_ASSOC);
+
+      if (!$existingUser) {
         return $this->response(403, "failed", "Unauthorized: Target user does not belong to your assigned zone.");
       }
 
-      // 4. BUILD DYNAMIC SQL QUERY & EXECUTE WITH ZONE FILTER GUARD
+      // 4. EXTRACT FIELDS WITH FALLBACK TO EXISTING DATA TO PREVENT OVERWRITING
+      $address = array_key_exists('address', $requestData) ? $requestData['address'] : $existingUser['address'];
+      $birthDate = array_key_exists('birthDate', $requestData) ? $requestData['birthDate'] : $existingUser['birthDate'];
+      $birthPlace = array_key_exists('birthPlace', $requestData) ? $requestData['birthPlace'] : $existingUser['birthPlace'];
+      $companion = array_key_exists('companion', $requestData) ? $requestData['companion'] : $existingUser['companion'];
+      $mahramName = array_key_exists('mahramName', $requestData) ? $requestData['mahramName'] : $existingUser['nama_mahram'];
+      $education = array_key_exists('education', $requestData) ? $requestData['education'] : $existingUser['education'];
+      $experience = array_key_exists('experience', $requestData) ? $requestData['experience'] : $existingUser['experience'];
+      $fatherName = array_key_exists('fatherName', $requestData) ? $requestData['fatherName'] : $existingUser['fatherName'];
+      $gender = array_key_exists('gender', $requestData) ? $requestData['gender'] : $existingUser['gender'];
+      $isCompleted = array_key_exists('isCompleted', $requestData) ? (!empty($requestData['isCompleted']) ? 1 : 0) : $existingUser['is_completed'];
+      $job = array_key_exists('job', $requestData) ? $requestData['job'] : $existingUser['job'];
+      $program = array_key_exists('departure', $requestData) ? $requestData['departure'] : $existingUser['program'];
+      $subDistrict = array_key_exists('subDistrict', $requestData) ? $requestData['subDistrict'] : $existingUser['subDistrict'];
+      $village = array_key_exists('village', $requestData) ? $requestData['village'] : $existingUser['village'];
+
+      // extract reference fields with dual-key support and fallback
+      $referenceName = $requestData['referenceName'] ?? $requestData['referensi_nama'] ?? $existingUser['referensi_nama'];
+      $referencePhone = $requestData['referencePhone'] ?? $requestData['referensi_wa'] ?? $existingUser['referensi_wa'];
+      $referenceOrigin = $requestData['referenceOrigin'] ?? $requestData['referensi_asal'] ?? $existingUser['referensi_asal'];
+
+      // format array payloads into comma-separated strings (unchanged as requested)
+      $healthCondition = is_array($requestData['health'] ?? null) ? implode(", ", $requestData['health']) : $existingUser['healthCondition'];
+      $positiveTrait = is_array($requestData['contribution'] ?? null) ? implode(", ", $requestData['contribution']) : $existingUser['positiveTrait'];
+      $skill = is_array($requestData['expertise'] ?? null) ? implode(", ", $requestData['expertise']) : $existingUser['skill'];
+
+      // extract profile image URL if present
+      $photoUrl = $requestData['profileImage'] ?? $requestData['gambar'] ?? null;
+
+      // 5. BUILD DYNAMIC SQL QUERY & EXECUTE WITH LEADER ZONE GUARD
       $params = [
         $address,
         $birthDate,
@@ -479,7 +446,7 @@ class LeaderController
         $program,
         $skill,
         $subDistrict,
-        $zone,
+        $leaderZone,
         $village,
         $referenceName,
         $referencePhone,
@@ -488,39 +455,38 @@ class LeaderController
 
       if ($photoUrl !== null) {
         $sql = "
-                    UPDATE users SET 
-                        address=?, birthDate=?, birthPlace=?, companion=?, nama_mahram=?, education=?, 
-                        experience=?, fatherName=?, gender=?, healthCondition=?, is_completed=?, 
-                        job=?, positiveTrait=?, program=?, skill=?, subDistrict=?, zona=?, village=?, 
-                        referensi_nama=?, referensi_wa=?, referensi_asal=?, gambar=? 
-                    WHERE id=? AND zona=?
-                ";
+            UPDATE users SET 
+                address=?, birthDate=?, birthPlace=?, companion=?, nama_mahram=?, education=?, 
+                experience=?, fatherName=?, gender=?, healthCondition=?, is_completed=?, 
+                job=?, positiveTrait=?, program=?, skill=?, subDistrict=?, zona=?, village=?, 
+                referensi_nama=?, referensi_wa=?, referensi_asal=?, gambar=? 
+            WHERE id=? AND zona=?
+        ";
         $params[] = $photoUrl;
       } else {
         $sql = "
-                    UPDATE users SET 
-                        address=?, birthDate=?, birthPlace=?, companion=?, nama_mahram=?, education=?, 
-                        experience=?, fatherName=?, gender=?, healthCondition=?, is_completed=?, 
-                        job=?, positiveTrait=?, program=?, skill=?, subDistrict=?, zona=?, village=?, 
-                        referensi_nama=?, referensi_wa=?, referensi_asal=? 
-                    WHERE id=? AND zona=?
-                ";
+            UPDATE users SET 
+                address=?, birthDate=?, birthPlace=?, companion=?, nama_mahram=?, education=?, 
+                experience=?, fatherName=?, gender=?, healthCondition=?, is_completed=?, 
+                job=?, positiveTrait=?, program=?, skill=?, subDistrict=?, zona=?, village=?, 
+                referensi_nama=?, referensi_wa=?, referensi_asal=? 
+            WHERE id=? AND zona=?
+        ";
       }
 
       $params[] = $userId;
-      $params[] = $zone;
+      $params[] = $leaderZone;
 
       $stmt = $this->conn->prepare($sql);
       $stmt->execute($params);
 
-      // 5. RETURN STANDARDIZED RESPONSE
+      // 6. RETURN STANDARDIZED RESPONSE
       return $this->response(200, "success", "Profile updated successfully!");
 
     } catch (Exception $e) {
       return $this->response(500, "failed", "Failed to update data: " . $e->getMessage());
     }
   }
-
 
   // helper for edit user
   /**
@@ -1105,5 +1071,610 @@ class LeaderController
     }
   }
 
+  // CRUD EVENT
+  // create an event
+  /**
+   * Create a new event with material file upload support
+   *
+   * @param array $requestData Request payload
+   * @param array $files Uploaded files ($_FILES)
+   * @return void
+   */
+  // CREATE EVENT ENDPOINT LOGIC
+  public function createEvent($requestData, $files)
+  {
+    // ==========================================
+    // 1. SANITIZE & VALIDATE INPUTS
+    // ==========================================
+    $eventName = trim($requestData['eventName'] ?? '');
+    $description = trim($requestData['description'] ?? '');
+    $location = trim($requestData['location'] ?? '');
+    $speaker = trim($requestData['speaker'] ?? '');
+
+    // validate event category enum ('leader', 'jamaah')
+    $categoryInput = strtolower(trim($requestData['category'] ?? ''));
+    $category = in_array($categoryInput, ['leader', 'jamaah'], true) ? $categoryInput : 'jamaah';
+
+    // validate target zone if category is 'leader' (convert to uppercase to match db enum)
+    $allowedZona = ['A', 'B', 'C', 'D', 'E', 'F', 'umum'];
+    $zoneInput = strtoupper(trim($requestData['zone'] ?? ''));
+    $zone = in_array($zoneInput, $allowedZona, true) ? $zoneInput : null;
+
+    // ensure leader category must have a valid target zone
+    if ($category === 'leader' && empty($zone)) {
+      return $this->response(400, "failed", "Zona target wajib diisi untuk event kategori leader.");
+    }
+
+    // validate event status enum ('mendatang', 'live', 'selesai')
+    $statusInput = trim($requestData['status'] ?? '');
+    $status = in_array($statusInput, ['mendatang', 'live', 'selesai'], true) ? $statusInput : 'mendatang';
+
+    // format start time & end time
+    $rawWaktuStart = trim($requestData['timeStart'] ?? '');
+    $rawWaktuEnd = trim($requestData['timeEnd'] ?? '');
+
+    $waktuEvent = null;
+    $waktuEnd = null;
+
+    if (!empty($rawWaktuStart)) {
+      $timeFormatted = strtotime($rawWaktuStart);
+      if ($timeFormatted !== false) {
+        $waktuEvent = date('Y-m-d H:i:s', $timeFormatted);
+      }
+    }
+
+    if (empty($waktuEvent)) {
+      return $this->response(400, "failed", "Format tanggal dan waktu mulai event tidak valid.");
+    }
+
+    if (!empty($rawWaktuEnd)) {
+      $timeFormatted = strtotime($rawWaktuEnd);
+      if ($timeFormatted !== false) {
+        $waktuEnd = date('Y-m-d H:i:s', $timeFormatted);
+      }
+    }
+
+    if (empty($waktuEnd)) {
+      return $this->response(400, "failed", "Format tanggal dan waktu selesai event tidak valid.");
+    }
+
+    if (strtotime($waktuEnd) <= strtotime($waktuEvent)) {
+      return $this->response(400, "failed", "Waktu selesai event harus lebih besar dari waktu mulai.");
+    }
+
+    $latitude = isset($requestData['latitude']) && $requestData['latitude'] !== '' ? (float) $requestData['latitude'] : null;
+    $longitude = isset($requestData['longitude']) && $requestData['longitude'] !== '' ? (float) $requestData['longitude'] : null;
+    $radius = isset($requestData['radius']) ? (int) $requestData['radius'] : 100;
+
+    if (empty($eventName) || $latitude === null || $longitude === null) {
+      return $this->response(400, "failed", "Nama event, latitude, dan longitude wajib diisi.");
+    }
+
+    // generate unique qr code hash
+    $qrHash = 'EVT-' . bin2hex(random_bytes(5));
+
+    // ==========================================
+    // 2. FILE UPLOAD HANDLING
+    // ==========================================
+    $relativePath = null;
+    $uploadedTargetPath = null;
+
+    if (isset($files['material']) && $files['material']['error'] === UPLOAD_ERR_OK) {
+      $file = $files['material'];
+
+      $allowedExtensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'];
+      $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+      if (!in_array($fileExtension, $allowedExtensions, true)) {
+        return $this->response(400, "failed", "Format file tidak didukung. Harap unggah PDF, Word, Excel, atau PPT.");
+      }
+
+      // maximum file size limit (10MB)
+      if ($file['size'] > 10 * 1024 * 1024) {
+        return $this->response(400, "failed", "Ukuran file materi melebihi batas maksimum (10MB).");
+      }
+
+      // ensure upload directory exists
+      $uploadDir = __DIR__ . '/../uploads/';
+      if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+      }
+
+      // sanitize file name
+      $rawFileNameOnly = pathinfo($file['name'], PATHINFO_FILENAME);
+      $cleanFileName = strtolower($rawFileNameOnly);
+      $cleanFileName = preg_replace('/\s+/', '_', $cleanFileName);
+      $cleanFileName = preg_replace('/[^a-z0-9_\-]/', '', $cleanFileName);
+
+      if (empty($cleanFileName)) {
+        $cleanFileName = 'materi';
+      }
+
+      // generate unique file name with timestamp and random hash
+      $uniqueSuffix = time() . '_' . bin2hex(random_bytes(3));
+      $newFileName = "{$cleanFileName}_{$uniqueSuffix}.{$fileExtension}";
+      $uploadedTargetPath = "{$uploadDir}{$newFileName}";
+      $relativePath = "uploads/{$newFileName}";
+
+      if (!move_uploaded_file($file['tmp_name'], $uploadedTargetPath)) {
+        return $this->response(500, "failed", "Gagal mengunggah file ke server.");
+      }
+    }
+
+    // ==========================================
+    // 3. DATABASE TRANSACTION
+    // ==========================================
+    $this->conn->beginTransaction();
+
+    try {
+      $queryEvent = "INSERT INTO events 
+            (nama_event, deskripsi_event, tempat, pembicara, latitude, longitude, radius, qr_hash, waktu_event, waktu_selesai, status, jenis_event, zona_target, file_path) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+      $stmt = $this->conn->prepare($queryEvent);
+      $stmt->execute([
+        $eventName,
+        $description,
+        $location,
+        $speaker,
+        $latitude,
+        $longitude,
+        $radius,
+        $qrHash,
+        $waktuEvent,
+        $waktuEnd,
+        $status,
+        $category,
+        $zone,
+        $relativePath
+      ]);
+
+      $eventId = $this->conn->lastInsertId();
+
+      // commit transaction
+      $this->conn->commit();
+
+      $responseData = [
+        "event_id" => $eventId,
+        "qr_hash" => $qrHash,
+        "file_path" => $relativePath
+      ];
+
+      return $this->response(200, "success", "Event berhasil dibuat!", $responseData);
+
+    } catch (Exception $e) {
+      // rollback database transaction
+      if ($this->conn->inTransaction()) {
+        $this->conn->rollBack();
+      }
+
+      // clean up uploaded file if query failed
+      if ($uploadedTargetPath && file_exists($uploadedTargetPath)) {
+        unlink($uploadedTargetPath);
+      }
+
+      return $this->response(500, "failed", $e->getMessage());
+    }
+  }
+
+  // get events
+  /**
+   * Fetch all registered events sorted by date
+   *
+   * @return void
+   */
+  /**
+   * Fetch registered events filtered strictly by Leader's zone
+   *
+   * @param array $requestData
+   * @return void
+   */
+  public function getEvents($requestData)
+  {
+    try {
+      if (!$this->conn instanceof \PDO) {
+        throw new \Exception("Koneksi database bukan instance PDO yang valid.");
+      }
+
+      // 1. SANITIZE & VALIDATE LEADER CREDENTIALS
+      $leaderId = $requestData['leader_id'] ?? '';
+      $zone = $requestData['zone'] ?? '';
+
+      // 2. FETCH LEADER ZONE IF NOT PROVIDED FROM FRONTEND
+      if (empty($zone)) {
+        if (empty($leaderId)) {
+          return $this->response(400, "failed", "Leader ID atau Zone diperlukan untuk otorisasi.");
+        }
+
+        $queryZone = "SELECT zona FROM users WHERE id = :leader_id AND role = 'leader' LIMIT 1";
+        $stmtZone = $this->conn->prepare($queryZone);
+        $stmtZone->execute([':leader_id' => $leaderId]);
+        $leader = $stmtZone->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$leader || empty($leader['zona'])) {
+          return $this->response(404, "failed", "Data leader atau zona wilayah tidak ditemukan.");
+        }
+
+        $zone = $leader['zona'];
+      }
+
+      $this->syncEventStatuses();
+
+      // 3. FETCH EVENTS FILTERED BY LEADER'S ZONE WITH COLUMN ALIASES FOR FRONTEND
+      $query = "SELECT 
+                    id,
+                    nama_event AS eventName,
+                    tempat AS location,
+                    pembicara AS speaker,
+                    waktu_event AS date,
+                    status,
+                    jenis_event AS category,
+                    zona_target AS zone
+                  FROM events 
+                  WHERE zona_target = :zone
+                  ORDER BY waktu_event DESC";
+
+      $stmt = $this->conn->prepare($query);
+      $stmt->execute([':zone' => $zone]);
+      $events = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+      // 4. RETURN STANDARDIZED RESPONSE
+      return $this->response(200, "success", "Daftar event berhasil diambil", $events);
+
+    } catch (\Throwable $e) {
+      return $this->response(500, "error", "Terjadi kesalahan pada server: " . $e->getMessage());
+    }
+  }
+
+
+  // get event detail
+  /**
+   * Fetch detailed information for a single event by ID
+   *
+   * @param array $requestData Request payload containing event id
+   * @return void
+   */
+  public function getEventDetail($requestData)
+  {
+    // 1. EXTRACT AND VALIDATE INPUTS
+    $eventId = isset($requestData['id']) ? (int) $requestData['id'] : 0;
+    $leaderId = isset($requestData['leader_id']) ? trim($requestData['leader_id']) : null;
+    $zoneInput = isset($requestData['zone']) ? strtoupper(trim($requestData['zone'])) : null;
+
+    if ($eventId === 0) {
+      return $this->response(400, "failed", "ID Event wajib diisi dan harus berupa angka.");
+    }
+
+    if (empty($leaderId) || empty($zoneInput)) {
+      return $this->response(401, "failed", "Akses ditolak. Identitas leader atau zona tidak valid.");
+    }
+
+    try {
+      // 2. FETCH EVENT DATA WITH ZONE SECURITY CHECK
+      // Memastikan leader hanya bisa melihat event yang sesuai dengan zonanya (atau zona 'umum')
+      $queryEvent = "SELECT * FROM events WHERE id = ? AND (zona_target = ? OR zona_target = 'umum') LIMIT 1";
+
+      $stmt = $this->conn->prepare($queryEvent);
+      $stmt->execute([$eventId, $zoneInput]);
+      $eventData = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+      if (!$eventData) {
+        return $this->response(404, "failed", "Data event tidak ditemukan atau Anda tidak memiliki hak akses ke zona ini.");
+      }
+
+      // 3. MAP RESPONSE PAYLOAD TO CAMELCASE
+      $responsePayload = [
+        "id" => (int) $eventData['id'],
+        "eventName" => $eventData['nama_event'],
+        "description" => $eventData['deskripsi_event'],
+        "location" => $eventData['tempat'],
+        "speaker" => $eventData['pembicara'],
+        "latitude" => $eventData['latitude'] !== null ? (float) $eventData['latitude'] : null,
+        "longitude" => $eventData['longitude'] !== null ? (float) $eventData['longitude'] : null,
+        "radius" => (int) $eventData['radius'],
+        "qrHash" => $eventData['qr_hash'],
+        "timeStart" => $eventData['waktu_event'],
+        "timeEnd" => $eventData['waktu_selesai'],
+        "status" => $eventData['status'],
+        "category" => $eventData['jenis_event'],
+        "zone" => $eventData['zona_target'],
+        "material" => $eventData['file_path']
+      ];
+
+      // 4. RETURN STANDARDIZED RESPONSE
+      return $this->response(200, "success", "Event detail retrieved successfully", $responsePayload);
+
+    } catch (\Throwable $e) {
+      return $this->response(500, "failed", "Server error: " . $e->getMessage());
+    }
+  }
+
+
+  // udpate event
+  /**
+   * Update existing event details and material file
+   *
+   * @param array $requestData Request payload
+   * @param array $files Uploaded files ($_FILES)
+   * @return void
+   */
+  // UPDATE EVENT ENDPOINT LOGIC
+  public function updateEvent($requestData, $files = [])
+  {
+    try {
+      // 1. VALIDATE EVENT ID
+      $eventId = isset($requestData['event_id']) ? (int) $requestData['event_id'] : 0;
+      $leaderId = isset($requestData['leader_id']) ? trim($requestData['leader_id']) : null;
+      $zoneInput = isset($requestData['zone']) ? strtoupper(trim($requestData['zone'])) : null;
+
+      if ($eventId === 0) {
+        return $this->response(400, "failed", "Id event tidak ditemukan.");
+      }
+
+      if (empty($leaderId) || empty($zoneInput)) {
+        return $this->response(401, "failed", "Akses ditolak. Identitas leader atau zona tidak valid.");
+      }
+
+      // 2. FETCH EXISTING EVENT DATA TO CHECK EXISTENCE & OLD FILE
+      $stmtOld = $this->conn->prepare("SELECT * FROM events WHERE id = ? LIMIT 1");
+      $stmtOld->execute([$eventId]);
+      $currentEvent = $stmtOld->fetch(\PDO::FETCH_ASSOC);
+
+      if (!$currentEvent) {
+        return $this->response(404, "failed", "Data event tidak ditemukan.");
+      }
+
+      if (empty($leaderId) || empty($zoneInput)) {
+        return $this->response(401, "failed", "Akses ditolak. Identitas leader atau zona tidak valid.");
+      }
+
+      if ($currentEvent['zona_target'] !== $zoneInput) {
+        return $this->response(403, "failed", "Akses ditolak. Anda hanya dapat mengubah event yang ada di zona Anda sendiri.");
+      }
+
+      // 3. MAP & SANITIZE PAYLOAD DATA
+      $namaEvent = trim($requestData['eventName'] ?? '');
+      $deskripsiEvent = trim($requestData['description'] ?? '');
+      $tempat = trim($requestData['location'] ?? '');
+      $pembicara = trim($requestData['speaker'] ?? '');
+
+      // validate event category enum ('leader', 'jamaah')
+      $categoryInput = strtolower(trim($requestData['category'] ?? ''));
+      $jenisEvent = in_array($categoryInput, ['leader', 'jamaah'], true) ? $categoryInput : 'jamaah';
+
+      // validate target zone if category is 'leader'
+      $allowedZona = ['A', 'B', 'C', 'D', 'E', 'F', 'umum'];
+      $targetZoneInput = strtoupper(trim($requestData['zone'] ?? ''));
+      $zonaTarget = in_array($targetZoneInput, $allowedZona, true) ? $targetZoneInput : null;
+
+      if ($jenisEvent === 'leader' && empty($zonaTarget)) {
+        return $this->response(400, "failed", "Zona target wajib diisi untuk event kategori leader.");
+      }
+
+      // validate event status enum ('mendatang', 'live', 'selesai')
+      $statusInput = trim($requestData['status'] ?? '');
+      $status = in_array($statusInput, ['mendatang', 'live', 'selesai'], true) ? $statusInput : 'mendatang';
+
+      // format start time & end time
+      $rawWaktuStart = trim($requestData['timeStart'] ?? '');
+      $rawWaktuEnd = trim($requestData['timeEnd'] ?? '');
+
+      $waktuEvent = null;
+      $waktuSelesai = null;
+
+      if (!empty($rawWaktuStart)) {
+        $timeStartFormatted = strtotime($rawWaktuStart);
+        if ($timeStartFormatted !== false) {
+          $waktuEvent = date('Y-m-d H:i:s', $timeStartFormatted);
+        }
+      }
+
+      if (empty($waktuEvent)) {
+        return $this->response(400, "failed", "Format tanggal dan waktu mulai event tidak valid.");
+      }
+
+      if (!empty($rawWaktuEnd)) {
+        $timeEndFormatted = strtotime($rawWaktuEnd);
+        if ($timeEndFormatted !== false) {
+          $waktuSelesai = date('Y-m-d H:i:s', $timeEndFormatted);
+        }
+      }
+
+      if (empty($waktuSelesai)) {
+        return $this->response(400, "failed", "Format tanggal dan waktu selesai event tidak valid.");
+      }
+
+      if (strtotime($waktuSelesai) <= strtotime($waktuEvent)) {
+        return $this->response(400, "failed", "Waktu selesai event harus lebih besar dari waktu mulai.");
+      }
+
+      $latitude = isset($requestData['latitude']) && $requestData['latitude'] !== '' ? (float) $requestData['latitude'] : null;
+      $longitude = isset($requestData['longitude']) && $requestData['longitude'] !== '' ? (float) $requestData['longitude'] : null;
+      $radius = isset($requestData['radius']) ? (int) $requestData['radius'] : 100;
+
+      if (empty($namaEvent) || $latitude === null || $longitude === null) {
+        return $this->response(400, "failed", "Nama event, latitude, dan longitude wajib diisi.");
+      }
+
+      $filePath = $currentEvent['file_path'];
+
+      // 4. HANDLE UPLOAD NEW MATERIAL FILE
+      if (isset($files['material']) && $files['material']['error'] === UPLOAD_ERR_OK) {
+        $file = $files['material'];
+        $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+        // validate file extension
+        $allowedExtensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'];
+        if (!in_array($fileExtension, $allowedExtensions, true)) {
+          return $this->response(400, "failed", "Format file tidak didukung.");
+        }
+
+        // maximum file size limit (10MB)
+        if ($file['size'] > 10 * 1024 * 1024) {
+          return $this->response(400, "failed", "Ukuran file materi melebihi batas maksimum (10MB).");
+        }
+
+        // sanitize raw file name
+        $rawFileNameOnly = pathinfo($file['name'], PATHINFO_FILENAME);
+        $cleanFileName = strtolower($rawFileNameOnly);
+        $cleanFileName = preg_replace('/\s+/', '_', $cleanFileName);
+        $cleanFileName = preg_replace('/[^a-z0-9_\-]/', '', $cleanFileName);
+
+        if (empty($cleanFileName)) {
+          $cleanFileName = 'materi';
+        }
+
+        // generate unique file name
+        $uniqueSuffix = time() . '_' . bin2hex(random_bytes(3));
+        $newFileName = "{$cleanFileName}_{$uniqueSuffix}.{$fileExtension}";
+
+        $uploadDir = __DIR__ . '/../uploads/';
+        if (!is_dir($uploadDir)) {
+          mkdir($uploadDir, 0755, true);
+        }
+
+        $destPath = $uploadDir . $newFileName;
+
+        if (move_uploaded_file($file['tmp_name'], $destPath)) {
+          // delete old file from server if exists
+          if (!empty($currentEvent['file_path'])) {
+            $oldFileFullPath = __DIR__ . '/../' . $currentEvent['file_path'];
+            if (file_exists($oldFileFullPath)) {
+              @unlink($oldFileFullPath);
+            }
+          }
+
+          // update relative path
+          $filePath = 'uploads/' . $newFileName;
+        } else {
+          return $this->response(500, "failed", "Gagal mengunggah file baru ke server.");
+        }
+      }
+
+      // 5. UPDATE EVENT IN DATABASE
+      $sql = "UPDATE events SET 
+                    nama_event = ?, 
+                    deskripsi_event = ?, 
+                    tempat = ?, 
+                    pembicara = ?, 
+                    jenis_event = ?, 
+                    zona_target = ?, 
+                    waktu_event = ?,
+                    waktu_selesai = ?,
+                    status = ?,
+                    latitude = ?, 
+                    longitude = ?, 
+                    radius = ?, 
+                    file_path = ? 
+                WHERE id = ?";
+
+      $stmt = $this->conn->prepare($sql);
+
+      $params = [
+        $namaEvent,
+        $deskripsiEvent,
+        $tempat,
+        $pembicara,
+        $jenisEvent,
+        $zonaTarget,
+        $waktuEvent,
+        $waktuSelesai,
+        $status,
+        $latitude,
+        $longitude,
+        $radius,
+        $filePath,
+        $eventId
+      ];
+
+      if ($stmt->execute($params)) {
+        $responseData = [
+          "event_id" => $eventId,
+          "file_path" => $filePath
+        ];
+        return $this->response(200, "success", "Event berhasil diperbarui.", $responseData);
+      } else {
+        $errorInfo = $stmt->errorInfo();
+        return $this->response(500, "error", "Gagal memperbarui database: " . ($errorInfo[2] ?? 'Unknown error'));
+      }
+
+    } catch (\PDOException $e) {
+      return $this->response(500, "error", "Terjadi kesalahan database: " . $e->getMessage());
+    } catch (\Exception $e) {
+      return $this->response(500, "error", "Terjadi kesalahan sistem: " . $e->getMessage());
+    }
+  }
+
+
+  // delete event
+  /**
+   * Delete event and remove associated material file
+   *
+   * @param array $requestData Request payload containing event ID
+   * @return void
+   */
+  public function deleteEvent($requestData)
+  {
+    // 1. EXTRACT AND VALIDATE EVENT ID & LEADER IDENTITY
+    $eventId = $requestData['id'] ?? $requestData['eventId'] ?? $requestData['event_id'] ?? null;
+    $leaderId = isset($requestData['leader_id']) ? trim($requestData['leader_id']) : null;
+    $zoneInput = isset($requestData['zone']) ? strtoupper(trim($requestData['zone'])) : null;
+
+    if (!$eventId || !is_numeric($eventId)) {
+      return $this->response(400, "error", "ID event tidak valid atau tidak ditemukan.");
+    }
+
+    if (empty($leaderId) || empty($zoneInput)) {
+      return $this->response(401, "error", "Akses ditolak. Identitas leader atau zona tidak valid.");
+    }
+
+    try {
+      if (!$this->conn instanceof \PDO) {
+        throw new \Exception("Koneksi database bukan instance PDO yang valid.");
+      }
+
+      $this->conn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+      // 2. FETCH EVENT DATA TO CHECK EXISTENCE & ZONE AUTHORIZATION
+      $stmtGetEvent = $this->conn->prepare("SELECT * FROM events WHERE id = ? LIMIT 1");
+      $stmtGetEvent->execute([$eventId]);
+      $eventData = $stmtGetEvent->fetch(\PDO::FETCH_ASSOC);
+
+      if (!$eventData) {
+        return $this->response(404, "error", "Event dengan ID tersebut tidak ditemukan.");
+      }
+
+      // ==========================================
+      // VALIDASI OTORISASI KETAT: HANYA ZONA SENDIRI
+      // ==========================================
+      if ($eventData['zona_target'] !== $zoneInput) {
+        return $this->response(403, "error", "Akses ditolak. Anda hanya dapat menghapus event yang ada di zona Anda sendiri.");
+      }
+      // ==========================================
+
+      $filePath = $eventData['file_path'];
+
+      // 3. DELETE EVENT RECORD FROM DATABASE
+      $stmtEvent = $this->conn->prepare("DELETE FROM events WHERE id = ?");
+      $stmtEvent->execute([$eventId]);
+
+      if ($stmtEvent->rowCount() > 0) {
+        // 4. REMOVE ASSOCIATED FILE FROM SERVER IF EXISTS
+        if (!empty($filePath)) {
+          $fullPath = __DIR__ . '/../' . $filePath;
+          if (file_exists($fullPath)) {
+            @unlink($fullPath);
+          }
+        }
+
+        return $this->response(200, "success", "Event dan file materi terkait berhasil dihapus.");
+      } else {
+        return $this->response(404, "error", "Gagal menghapus event dari database.");
+      }
+
+    } catch (\Throwable $e) {
+      return $this->response(500, "error", "Terjadi kesalahan pada server: " . $e->getMessage());
+    }
+  }
 
 }

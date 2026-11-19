@@ -86,7 +86,7 @@ switch ($action) {
   case 'update_document':
     $leaderController->updateDocument($requestData);
     break;
-    
+
   case 'edit_user':
     $leaderController->editUsers($requestData);
     break;
@@ -94,6 +94,27 @@ switch ($action) {
 
   case 'delete_user':
     $leaderController->deleteUser($requestData);
+    break;
+
+  // CRUD EVENT
+  case 'create_event':
+    $leaderController->createEvent($requestData, $_FILES);
+    break;
+
+  case 'update_event':
+    $leaderController->updateEvent($requestData, $_FILES);
+    break;
+
+  case 'get_events':
+    $leaderController->getEvents($requestData);
+    break;
+
+  case 'get_event_detail':
+    $leaderController->getEventDetail($requestData);
+    break;
+
+  case 'delete_event':
+    $leaderController->deleteEvent($requestData);
     break;
 
   default:
