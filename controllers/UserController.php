@@ -680,6 +680,7 @@ class UserController
       $ch = curl_init();
       curl_setopt($ch, CURLOPT_URL, $targetUrl);
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_USERAGENT, 'HadithAppBackend/1.0');
       curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'X-API-Key:' . AHMAD_SANUSI_API_KEY,
         'Accept: application/json'
@@ -750,6 +751,7 @@ class UserController
       $ch = curl_init();
       curl_setopt($ch, CURLOPT_URL, $targetUrl);
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_USERAGENT, 'HadithAppBackend/1.0');
       curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'X-API-Key:' . AHMAD_SANUSI_API_KEY,
         'Accept: application/json'
@@ -820,8 +822,9 @@ class UserController
       $ch = curl_init();
       curl_setopt($ch, CURLOPT_URL, $targetUrl);
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_USERAGENT, 'HadithAppBackend/1.0');
       curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'X-API-Key: ' . AHMAD_SANUSI_API_KEY,
+        'X-API-Key:' . AHMAD_SANUSI_API_KEY,
         'Accept: application/json'
       ]);
 
@@ -868,8 +871,9 @@ class UserController
       $ch = curl_init();
       curl_setopt($ch, CURLOPT_URL, $targetUrl);
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_USERAGENT, 'HadithAppBackend/1.0');
       curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'X-API-Key: ' . AHMAD_SANUSI_API_KEY,
+        'X-API-Key:' . AHMAD_SANUSI_API_KEY,
         'Accept: application/json'
       ]);
 
@@ -937,8 +941,9 @@ class UserController
       $ch = curl_init();
       curl_setopt($ch, CURLOPT_URL, $targetUrl);
       curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_USERAGENT, 'HadithAppBackend/1.0');
       curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'X-API-Key: ' . AHMAD_SANUSI_API_KEY,
+        'X-API-Key:' . AHMAD_SANUSI_API_KEY,
         'Accept: application/json'
       ]);
 
