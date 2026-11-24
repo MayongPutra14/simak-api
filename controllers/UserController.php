@@ -470,6 +470,93 @@ class UserController
     }
   }
 
+  // GET MY ATTENDANCE
+  /**
+   * Return the logged-in congregant's attendance history for completed events.
+   *
+   * Present rows come from `attendances`; absent rows are derived from the
+   * completed events that fall within the congregant's scope.
+   *
+   * @param array $data Request payload (optional user_id must match session)
+   * @return void
+   */
+  public function getMyAttendance($data)
+  {
+    try {
+      $authUser = getAuthenticatedUser($this->conn);
+    } catch (Exception $e) {
+      error_log("Failed to resolve attendance session: " . $e->getMessage());
+      return $this->response(200, "failed", "Gagal memvalidasi sesi login. Silakan coba lagi.");
+    }
+
+    // The contract requires application failures to arrive in the JSON body.
+    if (!$authUser) {
+      return $this->response(200, "failed", "Sesi login tidak valid, silakan login kembali.");
+    }
+
+    if (($authUser['role'] ?? '') !== 'user') {
+      return $this->response(200, "failed", "Endpoint ini hanya dapat diakses oleh jamaah.");
+    }
+
+    $claimedUserId = $data['user_id'] ?? null;
+    if ($claimedUserId !== null && $claimedUserId !== ''
+      && (string) $claimedUserId !== (string) $authUser['id']) {
+      return $this->response(200, "failed", "Anda hanya dapat melihat riwayat absensi milik sendiri.");
+    }
+
+    try {
+      // Keep event statuses and check-in times in WIB consistent for this request.
+      $this->conn->exec("SET time_zone = '+07:00'");
+      $this->syncEventStatuses();
+
+      $sql = "
+        SELECT
+          a.id                                   AS attendance_id,
+          e.id                                   AS event_id,
+          e.nama_event                           AS event_name,
+          DATE_FORMAT(e.waktu_event, '%Y-%m-%d') AS event_date,
+          TIME_FORMAT(a.waktu_absen, '%H:%i')    AS check_in_time
+        FROM events e
+        JOIN users u ON u.id = :user_id
+        LEFT JOIN attendances a
+          ON a.event_id = e.id AND a.user_id = u.id
+        WHERE e.status = 'selesai'
+          AND e.waktu_event IS NOT NULL
+          AND (
+            e.jenis_event = 'jamaah'
+            OR e.zona_target = u.zona
+            OR a.id IS NOT NULL
+          )
+        ORDER BY e.waktu_event DESC, e.id DESC
+      ";
+
+      $stmt = $this->conn->prepare($sql);
+      $stmt->execute([':user_id' => $authUser['id']]);
+      $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+      $records = array_map(function ($row) {
+        $hasAttended = $row['attendance_id'] !== null;
+        $eventId = (string) $row['event_id'];
+        $eventName = trim((string) ($row['event_name'] ?? ''));
+
+        return [
+          'id' => $hasAttended ? (int) $row['attendance_id'] : 'abs-' . $eventId,
+          'eventId' => $eventId,
+          'eventName' => $eventName !== '' ? $eventName : 'Kegiatan Tanpa Judul',
+          'eventDate' => (string) $row['event_date'],
+          'checkInTime' => $hasAttended ? $row['check_in_time'] : null,
+          'status' => $hasAttended ? 'hadir' : 'absen',
+        ];
+      }, $rows);
+
+      return $this->response(200, "success", "Riwayat absensi berhasil diambil.", $records);
+
+    } catch (Exception $e) {
+      error_log("Failed to fetch attendance history: " . $e->getMessage());
+      return $this->response(200, "failed", "Gagal memuat riwayat absensi. Silakan coba lagi.");
+    }
+  }
+
   // ATTENDANCES
   /**
    * Summary of haversineDistance

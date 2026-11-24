@@ -18,7 +18,7 @@ Plain PHP + MySQL backend (no framework, Composer, build step, or test suite). C
 
 ## Gotchas
 
-- No auth layer: no session/JWT/middleware. Identity is passed as `user_id` in the payload, and only some queries additionally filter by `role`. Never assume an endpoint is authorized; check and add checks if the task requires it.
+- Session auth exists only for `get_my_attendance`: `login.php` stores the identity in `$_SESSION`, and `api/auth.php` validates it. Every other endpoint still trusts `user_id` from the payload, and only some queries filter by `role` — never assume they are authorized.
 - Production entrypoints set `error_reporting(0)` and `display_errors=0`, so fatals surface as empty 500s. Temporarily enable errors locally, then revert; use `logs/` and `error_log` for diagnosis.
 - Known broken route: `update_user_profile` in `api/user.php` calls `$adminController`, which is never defined there. That action only works through `admin.php`/`leader.php`.
 - Known broken script: `api/cron_update_event.php` requires `__DIR__ . '/api/koneksi.php'`, resolving to `api/api/koneksi.php`. Fix the path before relying on it.
