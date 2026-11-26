@@ -121,6 +121,14 @@ switch ($action) {
     $leaderController->getAttendanceRecap($requestData);
     break;
 
+  case 'get_event_attendance_detail':
+    $leaderController->getEventAttendanceDetail($requestData);
+    break;
+
+  case 'get_jamaah_attendance_history':
+    $leaderController->getJamaahAttendanceHistory($requestData);
+    break;
+
   default:
     http_response_code(404);
     echo json_encode([

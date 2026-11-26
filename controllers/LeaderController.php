@@ -1446,6 +1446,34 @@ class LeaderController
   }
 
 
+  /**
+   * One completed event with participant statistics and participant list,
+   * scoped to the leader's session zone.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getEventAttendanceDetail($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getEventAttendanceDetail($requestData, 'leader');
+  }
+
+
+  /**
+   * One jamaah's identity, all-time stats, and event history, restricted to
+   * jamaah in the leader's session zone.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getJamaahAttendanceHistory($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getJamaahAttendanceHistory($requestData, 'leader');
+  }
+
+
   // udpate event
   /**
    * Update existing event details and material file

@@ -125,6 +125,14 @@ switch ($action) {
     $adminController->getAttendanceRecap($requestData);
     break;
 
+  case 'get_event_attendance_detail':
+    $adminController->getEventAttendanceDetail($requestData);
+    break;
+
+  case 'get_jamaah_attendance_history':
+    $adminController->getJamaahAttendanceHistory($requestData);
+    break;
+
   // READ & UPDATE landing page
   case 'get_landing_content':
     $adminController->getLandingContents();

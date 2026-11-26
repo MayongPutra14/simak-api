@@ -1270,6 +1270,32 @@ class AdminController
   }
 
 
+  /**
+   * One completed event with participant statistics and participant list.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getEventAttendanceDetail($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getEventAttendanceDetail($requestData, 'admin');
+  }
+
+
+  /**
+   * One jamaah's identity, all-time stats, and event history.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getJamaahAttendanceHistory($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getJamaahAttendanceHistory($requestData, 'admin');
+  }
+
+
   // udpate event
   /**
    * Update existing event details and material file

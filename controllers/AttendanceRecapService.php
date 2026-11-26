@@ -77,6 +77,55 @@ class AttendanceRecapService
     }
   }
 
+  /**
+   * Return one completed event with participant statistics and the scoped
+   * participant list.
+   *
+   * @param array  $data         Request payload
+   * @param string $expectedRole 'admin' or 'leader'
+   * @return void
+   */
+  public function getEventAttendanceDetail($data, $expectedRole)
+  {
+    $scope = $this->resolveScope($expectedRole);
+
+    try {
+      $this->prepareSession();
+
+      $payload = $this->buildEventAttendanceDetail($scope, is_array($data) ? $data : []);
+
+      $this->respond('success', 'Detail kehadiran kegiatan berhasil diambil.', $payload);
+    } catch (Throwable $e) {
+      error_log('Failed to load event attendance detail: ' . $e->getMessage());
+      $this->respond('error', 'Gagal memuat detail kehadiran kegiatan.');
+    }
+  }
+
+  /**
+   * Return one jamaah's identity, all-time statistics, and event history.
+   * `user_id` is only the target record; the caller's identity always comes
+   * from the session.
+   *
+   * @param array  $data         Request payload
+   * @param string $expectedRole 'admin' or 'leader'
+   * @return void
+   */
+  public function getJamaahAttendanceHistory($data, $expectedRole)
+  {
+    $scope = $this->resolveScope($expectedRole);
+
+    try {
+      $this->prepareSession();
+
+      $payload = $this->buildJamaahAttendanceHistory($scope, is_array($data) ? $data : []);
+
+      $this->respond('success', 'Riwayat kehadiran jamaah berhasil diambil.', $payload);
+    } catch (Throwable $e) {
+      error_log('Failed to load jamaah attendance history: ' . $e->getMessage());
+      $this->respond('error', 'Gagal memuat riwayat kehadiran jamaah.');
+    }
+  }
+
   // =========================================================================
   // SESSION / RESPONSE HELPERS
   // =========================================================================
@@ -189,20 +238,10 @@ class AttendanceRecapService
   private function buildAttendanceRecap($scope, $data)
   {
     // 1. NORMALISE REQUEST PARAMETERS
-    $page = max(1, (int) ($data['page'] ?? 1));
-
-    $perPage = (int) ($data['per_page'] ?? self::PER_PAGE_DEFAULT);
-    if ($perPage < 1) {
-      $perPage = self::PER_PAGE_DEFAULT;
-    }
-    $perPage = min($perPage, self::PER_PAGE_MAX);
+    [$page, $perPage] = $this->normalizePagination($data);
 
     $search = trim((string) ($data['search'] ?? ''));
-
-    $month = (string) ($data['month'] ?? 'all');
-    if (!preg_match('/^(0[1-9]|1[0-2])$/', $month)) {
-      $month = 'all';
-    }
+    $month = $this->normalizeMonth($data['month'] ?? 'all');
 
     $year = (string) ($data['year'] ?? 'all');
     if (!preg_match('/^\d{4}$/', $year)) {
@@ -211,19 +250,15 @@ class AttendanceRecapService
 
     // `zone` is an admin-only filter. The leader scope always comes from the
     // session and is never widened by the request body.
-    $zoneFilter = null;
-    if ($scope['role'] === 'admin') {
-      $zoneInput = strtoupper(trim((string) ($data['zone'] ?? 'all')));
-      if (in_array($zoneInput, ['A', 'B', 'C', 'D', 'E', 'F'], true)) {
-        $zoneFilter = $zoneInput;
-      }
-    }
+    $zoneFilter = $scope['role'] === 'admin'
+      ? $this->normalizeZoneFilter($data['zone'] ?? 'all')
+      : null;
 
     // 2. COMPLETE SCOPED EVENT SET (ignores search / month / year / zone)
     [$scopeSql, $scopeParams] = $this->eventScope($scope);
 
     $stmt = $this->conn->prepare(
-      "SELECT e.id, e.zona_target, e.waktu_event
+      "SELECT e.id, e.jenis_event, e.zona_target, e.waktu_event
        FROM events e
        WHERE $scopeSql"
     );
@@ -245,7 +280,7 @@ class AttendanceRecapService
     foreach ($scopedEvents as $event) {
       $present = $presentByEvent[(int) $event['id']] ?? 0;
       $participants = $this->participantsForEvent(
-        $event['zona_target'],
+        $event,
         $scope,
         $totalJamaah,
         $jamaahByZone
@@ -286,11 +321,7 @@ class AttendanceRecapService
     $countStmt->execute($pageParams);
     $total = (int) $countStmt->fetchColumn();
 
-    $totalPages = max(1, (int) ceil($total / $perPage));
-    if ($page > $totalPages) {
-      $page = $totalPages;
-    }
-    $offset = ($page - 1) * $perPage;
+    [$pagination, $offset] = $this->paginationFor($page, $perPage, $total);
 
     $pageSql = "SELECT
                   e.id,
@@ -298,6 +329,7 @@ class AttendanceRecapService
                   e.tempat,
                   e.waktu_event,
                   e.waktu_selesai,
+                  e.jenis_event,
                   e.zona_target,
                   e.status
                 FROM events e
@@ -323,7 +355,7 @@ class AttendanceRecapService
       $present = $pagePresentByEvent[$eventId] ?? 0;
 
       $participants = $this->participantsForEvent(
-        $row['zona_target'],
+        $row,
         $scope,
         $totalJamaah,
         $jamaahByZone,
@@ -350,17 +382,6 @@ class AttendanceRecapService
     }
 
     // 6. PAGINATION BLOCK
-    $pagination = [
-      'page' => $page,
-      'perPage' => $perPage,
-      'total' => $total,
-      'totalPages' => $totalPages,
-      'from' => $total > 0 ? $offset + 1 : 0,
-      'to' => $total > 0 ? min($offset + $perPage, $total) : 0,
-      'hasNextPage' => $page < $totalPages,
-      'hasPreviousPage' => $page > 1,
-    ];
-
     return [
       'stats' => $stats,
       'events' => $events,
@@ -386,7 +407,7 @@ class AttendanceRecapService
     $params = [];
 
     if ($scope['role'] === 'leader') {
-      $where[] = "(e.zona_target IS NULL OR e.zona_target = 'umum' OR e.zona_target = :scope_zone)";
+      $where[] = "(e.jenis_event = 'jamaah' OR e.zona_target IS NULL OR e.zona_target = 'umum' OR e.zona_target = :scope_zone)";
       $params[':scope_zone'] = $scope['zone'];
     }
 
@@ -419,8 +440,8 @@ class AttendanceRecapService
     }
 
     if ($scope['role'] === 'admin' && $zoneFilter !== null) {
-      // All-zone events stay in the list; their counts are narrowed below.
-      $where[] = "(e.zona_target IS NULL OR e.zona_target = 'umum' OR e.zona_target = :filter_zone)";
+      // All-zone (jamaah) events stay in the list; their counts are narrowed.
+      $where[] = "(e.jenis_event = 'jamaah' OR e.zona_target IS NULL OR e.zona_target = 'umum' OR e.zona_target = :filter_zone)";
       $params[':filter_zone'] = $zoneFilter;
     }
 
@@ -428,8 +449,425 @@ class AttendanceRecapService
   }
 
   // =========================================================================
+  // get_event_attendance_detail
+  // =========================================================================
+
+  /**
+   * Build the event detail payload: event header, participant statistics, and
+   * one page of participants.
+   */
+  private function buildEventAttendanceDetail($scope, $data)
+  {
+    // 1. VALIDATE THE REQUESTED EVENT
+    $eventId = (int) ($data['event_id'] ?? 0);
+
+    if ($eventId <= 0) {
+      $this->respond('failed', 'Kegiatan tidak ditemukan.');
+    }
+
+    $stmt = $this->conn->prepare(
+      "SELECT id, nama_event, tempat, waktu_event, waktu_selesai, jenis_event, zona_target, status
+       FROM events
+       WHERE id = ?
+       LIMIT 1"
+    );
+    $stmt->execute([$eventId]);
+    $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$event) {
+      $this->respond('failed', 'Kegiatan tidak ditemukan.');
+    }
+
+    if (($event['status'] ?? '') !== 'selesai') {
+      $this->respond('failed', 'Rekap hanya tersedia untuk kegiatan yang telah selesai.');
+    }
+
+    // 2. ENFORCE THE LEADER ZONE ON THE EVENT ITSELF
+    $eventZone = strtoupper(trim((string) ($event['zona_target'] ?? '')));
+    $isJamaahEvent = ($event['jenis_event'] ?? '') === 'jamaah';
+    $isAllZoneEvent = $isJamaahEvent || $eventZone === '' || $eventZone === 'UMUM';
+
+    if ($scope['role'] === 'leader' && !$isAllZoneEvent && $eventZone !== $scope['zone']) {
+      $this->respond('failed', 'Anda tidak memiliki akses ke kegiatan di luar zona Anda.');
+    }
+
+    // 3. NORMALISE FILTERS
+    [$page, $perPage] = $this->normalizePagination($data);
+
+    $search = trim((string) ($data['search'] ?? ''));
+    $status = $this->normalizeStatusFilter($data['status'] ?? 'all');
+
+    // `zone` is an admin-only participant filter. Leaders are always scoped to
+    // their session zone, so any client-supplied zone is ignored.
+    $zoneFilter = $scope['role'] === 'admin'
+      ? $this->normalizeZoneFilter($data['zone'] ?? 'all')
+      : null;
+
+    // Participant scope: leader session zone, admin filter zone, or the event's
+    // own zone. `null` means every jamaah in the event scope.
+    $participantZone = null;
+    $zoneMismatch = false;
+
+    if ($scope['role'] === 'leader') {
+      $participantZone = $scope['zone'];
+    } elseif (!$isAllZoneEvent) {
+      if ($zoneFilter !== null && $zoneFilter !== $eventZone) {
+        // The selected zone has no jamaah in this zone-targeted event.
+        $zoneMismatch = true;
+      } else {
+        $participantZone = $eventZone;
+      }
+    } else {
+      $participantZone = $zoneFilter;
+    }
+
+    // 4. STATISTICS FOR THE WHOLE SCOPED PARTICIPANT SET
+    // Contract §6.2: stats ignore search, status, and the admin zone filter.
+    [$totalJamaah, $jamaahByZone] = $this->jamaahCounts();
+
+    $statsParticipants = $this->participantsForEvent(
+      $event,
+      $scope,
+      $totalJamaah,
+      $jamaahByZone
+    );
+
+    $presentMap = $this->presentCounts([$eventId], $scope);
+    $statsPresent = $presentMap[$eventId] ?? 0;
+    $statsAbsent = max(0, $statsParticipants - $statsPresent);
+
+    $stats = [
+      'totalParticipants' => $statsParticipants,
+      'totalPresent' => $statsPresent,
+      'totalAbsent' => $statsAbsent,
+      'percentage' => $this->percentage($statsPresent, $statsParticipants),
+    ];
+
+    // 5. FILTERED PARTICIPANT PAGE
+    $where = ["u.role = 'user'"];
+    $params = [':event_id' => $eventId];
+
+    if ($participantZone !== null) {
+      $where[] = 'u.zona = :participant_zone';
+      $params[':participant_zone'] = $participantZone;
+    }
+
+    if ($search !== '') {
+      $where[] = 'u.nama_lengkap LIKE :search';
+      $params[':search'] = $this->likePattern($search);
+    }
+
+    if ($status === 'hadir') {
+      $where[] = 'a.id IS NOT NULL';
+    } elseif ($status === 'absen') {
+      $where[] = 'a.id IS NULL';
+    }
+
+    $whereSql = implode(' AND ', $where);
+    $fromSql = "FROM users u
+                LEFT JOIN attendances a
+                  ON a.user_id = u.id AND a.event_id = :event_id
+                WHERE $whereSql";
+
+    $total = 0;
+    $participants = [];
+
+    if (!$zoneMismatch) {
+      $countStmt = $this->conn->prepare("SELECT COUNT(*) $fromSql");
+      $countStmt->execute($params);
+      $total = (int) $countStmt->fetchColumn();
+    }
+
+    [$pagination, $offset] = $this->paginationFor($page, $perPage, $total);
+
+    if (!$zoneMismatch && $total > 0) {
+      $pageSql = "SELECT
+                    u.id,
+                    u.nama_lengkap,
+                    u.zona,
+                    a.id AS attendance_id,
+                    TIME_FORMAT(a.waktu_absen, '%H:%i') AS check_in_time
+                  $fromSql
+                  ORDER BY u.nama_lengkap ASC, u.id ASC
+                  LIMIT $perPage OFFSET $offset";
+
+      $pageStmt = $this->conn->prepare($pageSql);
+      $pageStmt->execute($params);
+
+      foreach ($pageStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $hasAttended = $row['attendance_id'] !== null;
+        $zone = strtoupper(trim((string) ($row['zona'] ?? '')));
+
+        $participants[] = [
+          'userId' => (int) $row['id'],
+          'fullName' => trim((string) ($row['nama_lengkap'] ?? '')),
+          'regionId' => null,
+          'regionName' => $zone !== '' ? 'Wilayah ' . $zone : null,
+          'zone' => $zone !== '' ? $zone : null,
+          'checkInTime' => $hasAttended ? $row['check_in_time'] : null,
+          'status' => $hasAttended ? 'hadir' : 'absen',
+        ];
+      }
+    }
+
+    return [
+      'event' => [
+        'eventId' => (int) $event['id'],
+        'id' => (int) $event['id'],
+        'eventName' => trim((string) ($event['nama_event'] ?? '')),
+        'eventDate' => $this->eventDate($event['waktu_event']),
+        'timeStart' => $event['waktu_event'],
+        'timeEnd' => $event['waktu_selesai'],
+        'location' => $event['tempat'],
+        'zone' => $event['zona_target'],
+        'status' => $event['status'],
+      ],
+      'stats' => $stats,
+      'participants' => $participants,
+      'pagination' => $pagination,
+    ];
+  }
+
+  // =========================================================================
+  // get_jamaah_attendance_history
+  // =========================================================================
+
+  /**
+   * Build the jamaah history payload: identity, all-time statistics, and one
+   * page of event history rows.
+   */
+  private function buildJamaahAttendanceHistory($scope, $data)
+  {
+    // 1. VALIDATE THE TARGET JAMAHA. `user_id` is only the target record; the
+    //    caller's identity always comes from the session.
+    $targetUserId = (int) ($data['user_id'] ?? 0);
+
+    if ($targetUserId <= 0) {
+      $this->respond('failed', 'Data jamaah tidak ditemukan.');
+    }
+
+    $stmt = $this->conn->prepare(
+      "SELECT id, nama_lengkap, zona, nomor_porsi
+       FROM users
+       WHERE id = ? AND role = 'user'
+       LIMIT 1"
+    );
+    $stmt->execute([$targetUserId]);
+    $jamaah = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$jamaah) {
+      $this->respond('failed', 'Data jamaah tidak ditemukan.');
+    }
+
+    // 2. LEADERS MAY ONLY READ JAMAHA IN THEIR OWN CURRENT ZONE
+    $jamaahZone = strtoupper(trim((string) ($jamaah['zona'] ?? '')));
+
+    if ($scope['role'] === 'leader' && $jamaahZone !== $scope['zone']) {
+      $this->respond('failed', 'Anda tidak memiliki akses ke data jamaah di luar zona Anda.');
+    }
+
+    // 3. NORMALISE FILTERS
+    [$page, $perPage] = $this->normalizePagination($data);
+
+    $search = trim((string) ($data['search'] ?? ''));
+    $month = $this->normalizeMonth($data['month'] ?? 'all');
+    $status = $this->normalizeStatusFilter($data['status'] ?? 'all');
+
+    // 4. EVENT SCOPE FOR THIS JAMAHA (mirrors user.php get_my_attendance)
+    $fromSql = "FROM events e
+                LEFT JOIN attendances a
+                  ON a.event_id = e.id AND a.user_id = :target_user_id";
+
+    $historyWhere = "e.status = 'selesai'
+                     AND e.waktu_event IS NOT NULL
+                     AND (e.jenis_event = 'jamaah' OR e.zona_target = :jamaah_zone OR a.id IS NOT NULL)";
+
+    $historyParams = [
+      ':target_user_id' => $targetUserId,
+      ':jamaah_zone' => $jamaahZone !== '' ? $jamaahZone : null,
+    ];
+
+    // 5. ALL-TIME STATISTICS AND MONTH OPTIONS (ignore active filters)
+    $statsStmt = $this->conn->prepare(
+      "SELECT e.id, e.waktu_event, a.id AS attendance_id
+       $fromSql
+       WHERE $historyWhere
+       ORDER BY e.waktu_event DESC, e.id DESC"
+    );
+    $statsStmt->execute($historyParams);
+    $allRows = $statsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $totalRecords = count($allRows);
+    $totalPresent = 0;
+
+    foreach ($allRows as $row) {
+      if ($row['attendance_id'] !== null) {
+        $totalPresent++;
+      }
+    }
+
+    $totalAbsent = max(0, $totalRecords - $totalPresent);
+
+    $stats = [
+      'totalPresent' => $totalPresent,
+      'totalAbsent' => $totalAbsent,
+      'totalRecords' => $totalRecords,
+      'percentage' => $this->percentage($totalPresent, $totalRecords),
+    ];
+
+    $filters = ['months' => $this->monthOptions($allRows)];
+
+    // 6. FILTERED HISTORY PAGE
+    $where = [$historyWhere];
+    $params = $historyParams;
+
+    if ($search !== '') {
+      $where[] = 'e.nama_event LIKE :search';
+      $params[':search'] = $this->likePattern($search);
+    }
+
+    if ($month !== 'all') {
+      $where[] = 'MONTH(e.waktu_event) = :month';
+      $params[':month'] = (int) $month;
+    }
+
+    if ($status === 'hadir') {
+      $where[] = 'a.id IS NOT NULL';
+    } elseif ($status === 'absen') {
+      $where[] = 'a.id IS NULL';
+    }
+
+    $whereSql = implode(' AND ', $where);
+
+    $countStmt = $this->conn->prepare("SELECT COUNT(*) $fromSql WHERE $whereSql");
+    $countStmt->execute($params);
+    $total = (int) $countStmt->fetchColumn();
+
+    [$pagination, $offset] = $this->paginationFor($page, $perPage, $total);
+
+    $records = [];
+
+    if ($total > 0) {
+      $pageSql = "SELECT
+                    e.id AS event_id,
+                    e.nama_event,
+                    e.waktu_event,
+                    a.id AS attendance_id,
+                    TIME_FORMAT(a.waktu_absen, '%H:%i') AS check_in_time
+                  $fromSql
+                  WHERE $whereSql
+                  ORDER BY e.waktu_event DESC, e.id DESC
+                  LIMIT $perPage OFFSET $offset";
+
+      $pageStmt = $this->conn->prepare($pageSql);
+      $pageStmt->execute($params);
+
+      foreach ($pageStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $hasAttended = $row['attendance_id'] !== null;
+        $eventId = (int) $row['event_id'];
+
+        $records[] = [
+          'id' => 'history-' . $eventId . '-' . $targetUserId,
+          'eventId' => $eventId,
+          'eventName' => trim((string) ($row['nama_event'] ?? '')),
+          'eventDate' => $this->eventDate($row['waktu_event']),
+          'checkInTime' => $hasAttended ? $row['check_in_time'] : null,
+          'status' => $hasAttended ? 'hadir' : 'absen',
+        ];
+      }
+    }
+
+    return [
+      'jamaah' => [
+        'userId' => (int) $jamaah['id'],
+        'fullName' => trim((string) ($jamaah['nama_lengkap'] ?? '')),
+        'zone' => $jamaahZone !== '' ? $jamaahZone : null,
+        'regionName' => $jamaahZone !== '' ? 'Wilayah ' . $jamaahZone : null,
+        'portionNumber' => $jamaah['nomor_porsi'],
+      ],
+      'stats' => $stats,
+      'records' => $records,
+      'pagination' => $pagination,
+      'filters' => $filters,
+    ];
+  }
+
+  // =========================================================================
   // DATA HELPERS
   // =========================================================================
+
+  /**
+   * Normalise `page` / `per_page`: 1-based, default 10, capped at 100.
+   *
+   * @return array{0:int,1:int}
+   */
+  private function normalizePagination($data)
+  {
+    $page = max(1, (int) ($data['page'] ?? 1));
+
+    $perPage = (int) ($data['per_page'] ?? self::PER_PAGE_DEFAULT);
+    if ($perPage < 1) {
+      $perPage = self::PER_PAGE_DEFAULT;
+    }
+
+    return [$page, min($perPage, self::PER_PAGE_MAX)];
+  }
+
+  /**
+   * Clamp the requested page to the result set and build the pagination block.
+   *
+   * @return array{0:array<string,mixed>,1:int} [pagination block, SQL offset]
+   */
+  private function paginationFor($page, $perPage, $total)
+  {
+    $totalPages = max(1, (int) ceil($total / $perPage));
+    if ($page > $totalPages) {
+      $page = $totalPages;
+    }
+
+    $offset = ($page - 1) * $perPage;
+
+    return [[
+      'page' => $page,
+      'perPage' => $perPage,
+      'total' => $total,
+      'totalPages' => $totalPages,
+      'from' => $total > 0 ? $offset + 1 : 0,
+      'to' => $total > 0 ? min($offset + $perPage, $total) : 0,
+      'hasNextPage' => $page < $totalPages,
+      'hasPreviousPage' => $page > 1,
+    ], $offset];
+  }
+
+  /**
+   * Normalise the `month` filter: "all" or "01"–"12".
+   */
+  private function normalizeMonth($value)
+  {
+    $month = (string) $value;
+
+    return preg_match('/^(0[1-9]|1[0-2])$/', $month) ? $month : 'all';
+  }
+
+  /**
+   * Normalise the `status` filter: "all", "hadir", or "absen".
+   */
+  private function normalizeStatusFilter($value)
+  {
+    $status = strtolower(trim((string) $value));
+
+    return in_array($status, ['hadir', 'absen'], true) ? $status : 'all';
+  }
+
+  /**
+   * Normalise an admin `zone` filter: null (all zones) or "A"–"F".
+   */
+  private function normalizeZoneFilter($value)
+  {
+    $zone = strtoupper(trim((string) $value));
+
+    return in_array($zone, ['A', 'B', 'C', 'D', 'E', 'F'], true) ? $zone : null;
+  }
 
   /**
    * Count jamaah per zone and in total. `users.role = 'user'` is the
@@ -486,7 +924,7 @@ class AttendanceRecapService
             JOIN users u ON u.id = a.user_id AND u.role = 'user'
             JOIN events e ON e.id = a.event_id
             WHERE a.event_id IN ($placeholders)
-              AND (e.zona_target IS NULL OR e.zona_target = 'umum' OR u.zona = e.zona_target)";
+              AND (e.jenis_event = 'jamaah' OR e.zona_target IS NULL OR e.zona_target = 'umum' OR u.zona = e.zona_target)";
 
     $zoneForCounts = $scope['role'] === 'leader' ? $scope['zone'] : $onlyZone;
     if ($zoneForCounts !== null) {
@@ -512,9 +950,10 @@ class AttendanceRecapService
    *
    * - leader: always their session zone, even for all-zone events.
    * - admin + filter zone: that zone (row counts follow the filter).
-   * - admin: all-zone event = every jamaah, zone-targeted = that zone only.
+   * - admin: jamaah events (jenis_event = 'jamaah') and all-zone events cover
+   *   every jamaah; zone-targeted leader events cover that zone only.
    */
-  private function participantsForEvent($zonaTarget, $scope, $totalJamaah, $jamaahByZone, $zoneOverride = null)
+  private function participantsForEvent($event, $scope, $totalJamaah, $jamaahByZone, $zoneOverride = null)
   {
     if ($zoneOverride !== null) {
       return $jamaahByZone[$zoneOverride] ?? 0;
@@ -524,8 +963,10 @@ class AttendanceRecapService
       return $jamaahByZone[$scope['zone']] ?? 0;
     }
 
-    $zone = strtoupper(trim((string) $zonaTarget));
-    if ($zone === '' || $zone === 'UMUM') {
+    $isJamaahEvent = ($event['jenis_event'] ?? '') === 'jamaah';
+    $zone = strtoupper(trim((string) ($event['zona_target'] ?? '')));
+
+    if ($isJamaahEvent || $zone === '' || $zone === 'UMUM') {
       return $totalJamaah;
     }
 
@@ -632,7 +1073,8 @@ class AttendanceRecapService
 
     foreach ($events as $event) {
       $zone = strtoupper(trim((string) ($event['zona_target'] ?? '')));
-      if (in_array($zone, ['A', 'B', 'C', 'D', 'E', 'F'], true)) {
+      if (($event['jenis_event'] ?? '') === 'leader'
+        && in_array($zone, ['A', 'B', 'C', 'D', 'E', 'F'], true)) {
         $zones[$zone] = true;
       }
     }
