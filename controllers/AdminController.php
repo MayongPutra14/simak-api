@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/AttendanceRecapService.php';
+
 class AdminController
 {
   private $conn;
@@ -1250,6 +1252,21 @@ class AdminController
     } catch (\Throwable $e) {
       return $this->response(500, "failed", "Server error: " . $e->getMessage());
     }
+  }
+
+
+  // ATTENDANCE RECAP
+  /**
+   * Completed-event attendance recap for the admin dashboard.
+   * Session, role and zone validation live in AttendanceRecapService.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getAttendanceRecap($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getAttendanceRecap($requestData, 'admin');
   }
 
 
