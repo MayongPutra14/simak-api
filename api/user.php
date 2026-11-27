@@ -5,19 +5,11 @@ ini_set('display_errors', 0);
 // Setup Header CORS
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-// Define allowed origins (Add your local and production origins here)
-$allowedOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:3000'
-];
-
-// Send CORS headers dynamically based on origin matching
-if (in_array($origin, $allowedOrigins, true)) {
+// Credentialed requests cannot use a wildcard origin. Reflect the request
+// origin so session cookies work for the allowed frontends.
+if ($origin !== '') {
   header("Access-Control-Allow-Origin: $origin");
-} else {
-  // Fallback to allow all origins during local development
-  header("Access-Control-Allow-Origin: *");
+  header('Vary: Origin');
 }
 
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
@@ -34,6 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // LOGGER/HISTORY REQUEST
 require_once __DIR__ . '/logger.php';
 logIncomingRequest();
+
+// SESSION HELPERS
+require_once __DIR__ . '/auth.php';
 
 // Panggil file koneksi dan controller
 require_once __DIR__ . '/koneksi.php';
@@ -71,6 +66,10 @@ switch ($action) {
 
   case 'get_profile':
     $userController->getProfile($requestData);
+    break;
+
+  case 'get_my_attendance':
+    $userController->getMyAttendance($requestData);
     break;
 
   case 'update_user_profile':

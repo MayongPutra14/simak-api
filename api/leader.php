@@ -6,19 +6,11 @@ ini_set('display_errors', 0);
 // SETUP CORS HEADERS
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-// define allowed origins
-$allowedOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:3000'
-];
-
-// send cors headers dynamically based on origin matching
-if (in_array($origin, $allowedOrigins, true)) {
+// Credentialed requests cannot use a wildcard origin. Reflect the request
+// origin so the session cookie (PHPSESSID) travels with the call.
+if ($origin !== '') {
   header("Access-Control-Allow-Origin: $origin");
-} else {
-  // fallback to allow all origins during development
-  header("Access-Control-Allow-Origin: *");
+  header('Vary: Origin');
 }
 
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
@@ -35,6 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // LOGGER / HISTORY REQUEST
 require_once __DIR__ . '/logger.php';
 logIncomingRequest();
+
+// SESSION HELPERS
+require_once __DIR__ . '/auth.php';
 
 // LOAD DATABASE CONNECTION & CONTROLLER
 require_once __DIR__ . '/koneksi.php';
@@ -119,6 +114,19 @@ switch ($action) {
 
   case 'delete_event':
     $leaderController->deleteEvent($requestData);
+    break;
+
+  // ATTENDANCE RECAP
+  case 'get_attendance_recap':
+    $leaderController->getAttendanceRecap($requestData);
+    break;
+
+  case 'get_event_attendance_detail':
+    $leaderController->getEventAttendanceDetail($requestData);
+    break;
+
+  case 'get_jamaah_attendance_history':
+    $leaderController->getJamaahAttendanceHistory($requestData);
     break;
 
   default:

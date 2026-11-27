@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/AttendanceRecapService.php';
+
 class LeaderController
 {
   private $conn;
@@ -1425,6 +1427,50 @@ class LeaderController
     } catch (\Throwable $e) {
       return $this->response(500, "failed", "Server error: " . $e->getMessage());
     }
+  }
+
+
+  // ATTENDANCE RECAP
+  /**
+   * Completed-event attendance recap for the leader dashboard.
+   * Session, role and zone validation live in AttendanceRecapService, which
+   * scopes every event and jamaah to the leader's session zone.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getAttendanceRecap($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getAttendanceRecap($requestData, 'leader');
+  }
+
+
+  /**
+   * One completed event with participant statistics and participant list,
+   * scoped to the leader's session zone.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getEventAttendanceDetail($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getEventAttendanceDetail($requestData, 'leader');
+  }
+
+
+  /**
+   * One jamaah's identity, all-time stats, and event history, restricted to
+   * jamaah in the leader's session zone.
+   *
+   * @param array $requestData Request payload
+   * @return void
+   */
+  public function getJamaahAttendanceHistory($requestData)
+  {
+    $service = new AttendanceRecapService($this->conn);
+    $service->getJamaahAttendanceHistory($requestData, 'leader');
   }
 
 
