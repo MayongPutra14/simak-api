@@ -585,6 +585,7 @@ class AttendanceRecapService
                     u.id,
                     u.nama_lengkap,
                     u.zona,
+                    u.gambar,
                     a.id AS attendance_id,
                     TIME_FORMAT(a.waktu_absen, '%H:%i') AS check_in_time
                   $fromSql
@@ -598,9 +599,11 @@ class AttendanceRecapService
         $hasAttended = $row['attendance_id'] !== null;
         $zone = strtoupper(trim((string) ($row['zona'] ?? '')));
 
+        // photo comes from users.gambar; stay null when the jamaah has no image
         $participants[] = [
           'userId' => (int) $row['id'],
           'fullName' => trim((string) ($row['nama_lengkap'] ?? '')),
+          'photoUrl' => $row['gambar'] ?? null,
           'regionId' => null,
           'regionName' => $zone !== '' ? 'Wilayah ' . $zone : null,
           'zone' => $zone !== '' ? $zone : null,
