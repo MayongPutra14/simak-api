@@ -647,7 +647,7 @@ class AttendanceRecapService
     }
 
     $stmt = $this->conn->prepare(
-      "SELECT id, nama_lengkap, zona, nomor_porsi
+      "SELECT id, nama_lengkap, zona, nomor_porsi, gambar
        FROM users
        WHERE id = ? AND role = 'user'
        LIMIT 1"
@@ -777,13 +777,16 @@ class AttendanceRecapService
       }
     }
 
+    // identity fields come straight from users; absent columns stay null so the
+    // frontend can render placeholders without branching on undefined keys.
     return [
       'jamaah' => [
         'userId' => (int) $jamaah['id'],
         'fullName' => trim((string) ($jamaah['nama_lengkap'] ?? '')),
+        'photoUrl' => $jamaah['gambar'] ?? null,
         'zone' => $jamaahZone !== '' ? $jamaahZone : null,
         'regionName' => $jamaahZone !== '' ? 'Wilayah ' . $jamaahZone : null,
-        'portionNumber' => $jamaah['nomor_porsi'],
+        'portionNumber' => $jamaah['nomor_porsi'] ?? null,
       ],
       'stats' => $stats,
       'records' => $records,
