@@ -397,7 +397,12 @@ class AttendanceRecapService
 
   /**
    * Event scope shared by every recap query. Only completed events are
-   * eligible; a leader additionally sees all-zone events plus their own zone.
+   * eligible; a leader is strictly limited to events that target their own
+   * session zone.
+   *
+   * General / all-zone events (`zona_target` null or "umum") and events from
+   * other zones are intentionally excluded from the leader recap, so the
+   * leader list and its stats only ever describe their own zone.
    *
    * @return array{0:string,1:array<string,mixed>}
    */
@@ -407,7 +412,8 @@ class AttendanceRecapService
     $params = [];
 
     if ($scope['role'] === 'leader') {
-      $where[] = "(e.jenis_event = 'jamaah' OR e.zona_target IS NULL OR e.zona_target = 'umum' OR e.zona_target = :scope_zone)";
+      // strict zone match: null, "umum", and other zones never reach a leader
+      $where[] = 'e.zona_target = :scope_zone';
       $params[':scope_zone'] = $scope['zone'];
     }
 
@@ -754,6 +760,7 @@ class AttendanceRecapService
       $pageSql = "SELECT
                     e.id AS event_id,
                     e.nama_event,
+                    e.zona_target,
                     e.waktu_event,
                     a.id AS attendance_id,
                     TIME_FORMAT(a.waktu_absen, '%H:%i') AS check_in_time
@@ -769,11 +776,20 @@ class AttendanceRecapService
         $hasAttended = $row['attendance_id'] !== null;
         $eventId = (int) $row['event_id'];
 
+        // event zone comes from events.zona_target; null / "umum" means the
+        // event was open to every zone, so it is reported as "Umum".
+        $eventZoneRaw = strtoupper(trim((string) ($row['zona_target'] ?? '')));
+        $isGeneralZone = $eventZoneRaw === '' || $eventZoneRaw === 'UMUM';
+        $eventZone = $isGeneralZone ? null : $eventZoneRaw;
+
         $records[] = [
           'id' => 'history-' . $eventId . '-' . $targetUserId,
           'eventId' => $eventId,
           'eventName' => trim((string) ($row['nama_event'] ?? '')),
           'eventDate' => $this->eventDate($row['waktu_event']),
+          'eventZone' => $eventZone,
+          'zone' => $eventZone,
+          'eventRegionName' => $isGeneralZone ? 'Umum' : 'Wilayah ' . $eventZoneRaw,
           'checkInTime' => $hasAttended ? $row['check_in_time'] : null,
           'status' => $hasAttended ? 'hadir' : 'absen',
         ];
